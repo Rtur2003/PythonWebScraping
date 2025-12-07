@@ -192,7 +192,8 @@ def search_n11(query: str) -> str:
         best_match = None
         best_ratio = 0
         if not results:
-            results = soup.select_one('a.plink')
+            single_result = soup.select_one('a.plink')
+            results = [single_result] if single_result else []
         
         for link in results:
             title = link.get('title', '') or link.get_text(strip=True)
