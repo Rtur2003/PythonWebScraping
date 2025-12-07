@@ -1,3 +1,4 @@
+import asyncio
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -60,6 +61,11 @@ def fetch_html(url: str, use_cloudscraper: bool = True) -> str:
         print(f"[FETCH ERROR] {url}: {e}")
         raise
 
+
+async def fetch_html_async(url: str, use_cloudscraper: bool = True) -> str:
+    """Blocking fetch in a worker to keep FastAPI event loop responsive."""
+    return await asyncio.to_thread(fetch_html, url, use_cloudscraper)
+
 def clean_product_name(name: str) -> str:
     if not name:
         return ""
@@ -85,13 +91,13 @@ def clean_product_name(name: str) -> str:
     print(f"[CLEAN] '{name}'")
     return name
 
-def search_trendyol(query: str) -> str:
+async def search_trendyol(query: str) -> str:
     try:
         query_encoded = quote_plus(query)
         search_url = f"https://www.trendyol.com/sr?q={query_encoded}"
         print(f"[TRENDYOL] Arama: {search_url}")
         
-        html = fetch_html(search_url, use_cloudscraper=True)
+        html = await fetch_html_async(search_url, use_cloudscraper=True)
         soup = BeautifulSoup(html, "lxml")
         
         script = soup.find('script', id='__NEXT_DATA__')
@@ -128,12 +134,12 @@ def search_trendyol(query: str) -> str:
         print(f"[TRENDYOL ERROR] {e}")
         return None
 
-def search_amazon(query: str) -> str:
+async def search_amazon(query: str) -> str:
     try:
         search_url = f"https://www.amazon.com.tr/s?k={query.replace(' ', '+')}"
         print(f"[AMAZON] Arama: {search_url}")
         
-        html = fetch_html(search_url, use_cloudscraper=True)
+        html = await fetch_html_async(search_url, use_cloudscraper=True)
         soup = BeautifulSoup(html, "lxml")
         
         selectors = [
@@ -180,12 +186,12 @@ def search_amazon(query: str) -> str:
 def similar(a, b):
     return SequenceMatcher(None, a, b).ratio()
 
-def search_n11(query: str) -> str:
+async def search_n11(query: str) -> str:
     try:
         search_url = f"https://www.n11.com/arama?q={query.replace(' ', '+')}"
         print(f"[N11] Arama: {search_url}")
         
-        html = fetch_html(search_url, use_cloudscraper=True)
+        html = await fetch_html_async(search_url, use_cloudscraper=True)
         soup = BeautifulSoup(html, "lxml")
         
         results = soup.select('li.column a.plink')
@@ -226,7 +232,7 @@ async def compare_products(request: ScrapeRequest):
 
         if current_platform != 'trendyol':
             try:
-                trendyol_url = search_trendyol(base_name)
+                trendyol_url = await search_trendyol(base_name)
                 if trendyol_url:
                     trendyol_req = ScrapeRequest(url=trendyol_url)
                     trendyol_data = await scrape_product(trendyol_req)
@@ -236,7 +242,7 @@ async def compare_products(request: ScrapeRequest):
         
         if current_platform != 'amazon':
             try:
-                amazon_url = search_amazon(base_name)
+                amazon_url = await search_amazon(base_name)
                 if amazon_url:
                     amazon_req = ScrapeRequest(url=amazon_url)
                     amazon_data = await scrape_product(amazon_req)
@@ -246,7 +252,7 @@ async def compare_products(request: ScrapeRequest):
         
         if current_platform != 'n11':
             try:
-                n11_url = search_n11(base_name)
+                n11_url = await search_n11(base_name)
                 if n11_url:
                     n11_req = ScrapeRequest(url=n11_url)
                     n11_data = await scrape_product(n11_req)
@@ -273,13 +279,13 @@ async def scrape_product(request: ScrapeRequest):
         print(f"[INFO] Platform: {platform}, URL: {request.url}")
         
         if platform == 'amazon':
-            html = fetch_html(request.url, use_cloudscraper=True)
+            html = await fetch_html_async(request.url, use_cloudscraper=True)
             product_data = scrape_amazon(html, request.url)
         elif platform == 'trendyol':
-            html = fetch_html(request.url, use_cloudscraper=True)
+            html = await fetch_html_async(request.url, use_cloudscraper=True)
             product_data = scrape_trendyol(html, request.url)
         elif platform == 'n11':
-            product_data = scrape_n11(request.url)
+            product_data = await asyncio.to_thread(scrape_n11, request.url)
         else:
             raise HTTPException(status_code=400, detail="Desteklenmeyen platform")
         
